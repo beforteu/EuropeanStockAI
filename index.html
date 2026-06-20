@@ -235,7 +235,7 @@ tr:hover td:nth-child(2){background:var(--bg3);}
 <!-- DISCLAIMER -->
 <div class="disclaimer">
   <strong>⚠ DISCLAIMER</strong>
-  Solo scopo informativo. Non costituisce consulenza finanziaria. Investire comporta rischi di perdita del capitale.
+  Piano gratuito FMP: solo dati di mercato base (prezzo, market cap, beta, dividendo). Indici di bilancio (P/E, ROE, margini) non disponibili per borse europee nel piano free. Solo scopo informativo — non costituisce consulenza finanziaria.
 </div>
 
 <!-- CONTROLS -->
@@ -276,13 +276,12 @@ tr:hover td:nth-child(2){background:var(--bg3);}
     </select>
   </div>
   <div class="ctrl">
-    <span class="ctrl-label">P/E max</span>
+    <span class="ctrl-label">Mkt Cap min (M€)</span>
     <select id="fPE" onchange="applyFilters()">
       <option value="">Qualsiasi</option>
-      <option value="10">≤ 10×</option>
-      <option value="15">≤ 15×</option>
-      <option value="20">≤ 20×</option>
-      <option value="30">≤ 30×</option>
+      <option value="1000">≥ 1.000</option>
+      <option value="10000">≥ 10.000</option>
+      <option value="50000">≥ 50.000</option>
     </select>
   </div>
   <div class="ctrl">
@@ -306,9 +305,9 @@ tr:hover td:nth-child(2){background:var(--bg3);}
 <div class="stats-strip" id="statsStrip">
   <div class="sstat"><span class="sstat-label">Mostrate</span><span class="sstat-val neu" id="ss-shown">0</span></div>
   <div class="sstat-sep"></div>
-  <div class="sstat"><span class="sstat-label">P/E medio</span><span class="sstat-val neu" id="ss-pe">—</span></div>
+  <div class="sstat"><span class="sstat-label">Mkt Cap media (M€)</span><span class="sstat-val neu" id="ss-pe">—</span></div>
   <div class="sstat-sep"></div>
-  <div class="sstat"><span class="sstat-label">Cresc. ricavi media</span><span class="sstat-val" id="ss-rev">—</span></div>
+  <div class="sstat"><span class="sstat-label">Var. % media</span><span class="sstat-val" id="ss-rev">—</span></div>
   <div class="sstat-sep"></div>
   <div class="sstat"><span class="sstat-label">Div. Yield medio</span><span class="sstat-val neu" id="ss-div">—</span></div>
   <div class="sstat-sep"></div>
@@ -350,30 +349,14 @@ const COLS=[
   {id:'ticker',      label:'Ticker',          def:true, sticky:true},
   {id:'exchange',    label:'Borsa',           def:true},
   {id:'sector',      label:'Settore',         def:true},
+  {id:'industry',    label:'Industria',       def:false},
   {id:'marketCap',   label:'Mkt Cap (M€)',     def:true},
   {id:'price',       label:'Prezzo',          def:true},
   {id:'change',      label:'Var. %',          def:true},
-  {id:'pe',          label:'P/E',             def:true},
-  {id:'pb',          label:'P/B',             def:false},
-  {id:'ps',          label:'P/S',             def:false},
-  {id:'eps',         label:'EPS',             def:false},
-  {id:'roe',         label:'ROE %',           def:true},
-  {id:'roa',         label:'ROA %',           def:false},
-  {id:'roic',        label:'ROIC %',          def:false},
-  {id:'revenue',     label:'Ricavi (M€)',       def:true},
-  {id:'revenueGrowth',label:'Cresc. Ric. %',  def:true},
-  {id:'netMargin',   label:'Marg. Netto %',   def:true},
-  {id:'grossMargin', label:'Marg. Lordo %',   def:false},
-  {id:'ebitda',      label:'EBITDA (M€)',       def:false},
-  {id:'ebitdaMargin',label:'Marg. EBITDA %',  def:false},
-  {id:'debtEquity',  label:'Debt/Equity',     def:true},
-  {id:'currentRatio',label:'Current Ratio',   def:false},
-  {id:'quickRatio',  label:'Quick Ratio',     def:false},
-  {id:'fcf',         label:'FCF (M€)',          def:false},
   {id:'dividend',    label:'Div. Yield %',    def:true},
-  {id:'beta',        label:'Beta',            def:false},
-  {id:'high52',      label:'52W Max',         def:false},
-  {id:'low52',       label:'52W Min',         def:false},
+  {id:'beta',        label:'Beta',            def:true},
+  {id:'high52',      label:'52W Max',         def:true},
+  {id:'low52',       label:'52W Min',         def:true},
   {id:'score',       label:'Score',           def:true},
 ];
 
@@ -434,14 +417,14 @@ function applyFilters(){
   const s=document.getElementById('srch').value.toLowerCase();
   const ex=document.getElementById('fExch').value;
   const se=document.getElementById('fSect').value;
-  const pe=parseFloat(document.getElementById('fPE').value)||null;
+  const minCap=parseFloat(document.getElementById('fPE').value)||null;
   const sc=parseFloat(document.getElementById('fScore').value)||null;
 
   filtered=allData.filter(c=>{
     if(s&&!c.name.toLowerCase().includes(s)&&!c.ticker.toLowerCase().includes(s)) return false;
     if(ex&&c.exchange!==ex) return false;
     if(se&&!c.sector?.includes(se)) return false;
-    if(pe&&(c.pe==null||c.pe<=0||c.pe>pe)) return false;
+    if(minCap&&(c.marketCap==null||c.marketCap<minCap)) return false;
     if(sc&&(c.score==null||c.score<sc)) return false;
     return true;
   });
@@ -501,26 +484,10 @@ function renderTable(){
         case 'ticker':  h+=`<td><span class="ticker">${c.ticker}</span></td>`;break;
         case 'exchange':h+=`<td><span class="exch ${c.exchCls}">${c.exchange}</span></td>`;break;
         case 'sector':  h+=`<td><span class="sect">${c.sector||'<span class="na">—</span>'}</span></td>`;break;
+        case 'industry':h+=`<td><span class="sect">${c.industry||'<span class="na">—</span>'}</span></td>`;break;
         case 'marketCap':h+=`<td class="num">${bigNum(c.marketCap)}</td>`;break;
         case 'price':   h+=`<td class="num">${n(c.price,2,' '+(c.currency||'€'))}</td>`;break;
         case 'change':  h+=`<td class="num">${pct(c.change)}</td>`;break;
-        case 'pe':      h+=`<td class="num">${c.pe&&c.pe>0?n(c.pe,1):'<span class="na">—</span>'}</td>`;break;
-        case 'pb':      h+=`<td class="num">${n(c.pb,2)}</td>`;break;
-        case 'ps':      h+=`<td class="num">${n(c.ps,2)}</td>`;break;
-        case 'eps':     h+=`<td class="num">${n(c.eps,2)}</td>`;break;
-        case 'roe':     h+=`<td class="num">${pct(c.roe)}</td>`;break;
-        case 'roa':     h+=`<td class="num">${pct(c.roa)}</td>`;break;
-        case 'roic':    h+=`<td class="num">${pct(c.roic)}</td>`;break;
-        case 'revenue': h+=`<td class="num">${bigNum(c.revenue)}</td>`;break;
-        case 'revenueGrowth':h+=`<td class="num">${pct(c.revenueGrowth)}</td>`;break;
-        case 'netMargin':h+=`<td class="num">${pct(c.netMargin)}</td>`;break;
-        case 'grossMargin':h+=`<td class="num">${pct(c.grossMargin)}</td>`;break;
-        case 'ebitda':  h+=`<td class="num">${bigNum(c.ebitda)}</td>`;break;
-        case 'ebitdaMargin':h+=`<td class="num">${pct(c.ebitdaMargin)}</td>`;break;
-        case 'debtEquity':h+=`<td class="num">${n(c.debtEquity,2)}</td>`;break;
-        case 'currentRatio':h+=`<td class="num">${n(c.currentRatio,2)}</td>`;break;
-        case 'quickRatio':h+=`<td class="num">${n(c.quickRatio,2)}</td>`;break;
-        case 'fcf':     h+=`<td class="num">${bigNum(c.fcf)}</td>`;break;
         case 'dividend':h+=`<td class="num">${pct(c.dividend,2)}</td>`;break;
         case 'beta':    h+=`<td class="num">${n(c.beta,2)}</td>`;break;
         case 'high52':  h+=`<td class="num">${n(c.high52,2)}</td>`;break;
@@ -540,14 +507,14 @@ function updateStats(){
   document.getElementById('statsStrip').classList.add('on');
   const avg=fn=>{const v=filtered.map(fn).filter(x=>x!=null&&!isNaN(x));return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
   document.getElementById('ss-shown').textContent=filtered.length;
-  const pe=avg(c=>c.pe>0?c.pe:null);
-  const rv=avg(c=>c.revenueGrowth);
+  const cap=avg(c=>c.marketCap);
+  const ch=avg(c=>c.change);
   const dv=avg(c=>c.dividend);
   const sc=avg(c=>c.score);
-  document.getElementById('ss-pe').textContent=pe!=null?pe.toFixed(1):'—';
+  document.getElementById('ss-pe').textContent=cap!=null?bigNum(cap):'—';
   const revEl=document.getElementById('ss-rev');
-  revEl.textContent=rv!=null?(rv>0?'+':'')+rv.toFixed(1)+'%':'—';
-  revEl.className='sstat-val '+(rv>0?'pos':rv<0?'neg':'neu');
+  revEl.textContent=ch!=null?(ch>0?'+':'')+ch.toFixed(2)+'%':'—';
+  revEl.className='sstat-val '+(ch>0?'pos':ch<0?'neg':'neu');
   document.getElementById('ss-div').textContent=dv!=null?dv.toFixed(2)+'%':'—';
   document.getElementById('ss-score').textContent=sc!=null?sc.toFixed(0):'—';
 }
@@ -565,31 +532,23 @@ function openDrawer(ticker){
   document.getElementById('dBody').innerHTML=`
     ${c.description?`<div class="d-section"><div class="d-section-title">Descrizione</div><p class="drawer-desc">${c.description}</p></div>`:''}
     <div class="d-section">
-      <div class="d-section-title">Valutazione</div>
+      <div class="d-section-title">Dati di Mercato</div>
       <div class="kv-grid">
         ${kv('Prezzo',nn(c.price,2)+' '+(c.currency||'€'))}${kv('Market Cap',bb(c.marketCap))}
-        ${kv('P/E',nn(c.pe,1))}${kv('P/B',nn(c.pb,2))}
-        ${kv('P/S',nn(c.ps,2))}${kv('EPS',nn(c.eps,2))}
+        ${kv('Variazione',pp(c.change))}${kv('Beta',nn(c.beta,2))}
         ${kv('52W Max',nn(c.high52,2))}${kv('52W Min',nn(c.low52,2))}
+        ${kv('Div. Yield',pp(c.dividend,2))}${kv('Score',c.score+'/100')}
       </div>
     </div>
     <div class="d-section">
-      <div class="d-section-title">Conto Economico</div>
+      <div class="d-section-title">Classificazione</div>
       <div class="kv-grid">
-        ${kv('Ricavi',bb(c.revenue))}${kv('Cresc. Ricavi',pp(c.revenueGrowth))}
-        ${kv('EBITDA',bb(c.ebitda))}${kv('Marg. EBITDA',pp(c.ebitdaMargin))}
-        ${kv('Marg. Lordo',pp(c.grossMargin))}${kv('Marg. Netto',pp(c.netMargin))}
-        ${kv('FCF',bb(c.fcf))}${kv('Div. Yield',pp(c.dividend,2))}
+        ${kv('Settore',c.sector||'—')}${kv('Industria',c.industry||'—')}
+        ${kv('Paese',c.country||'—')}${kv('Borsa',c.exchange||'—')}
       </div>
     </div>
-    <div class="d-section">
-      <div class="d-section-title">Efficienza & Solidità</div>
-      <div class="kv-grid">
-        ${kv('ROE',pp(c.roe))}${kv('ROA',pp(c.roa))}
-        ${kv('ROIC',pp(c.roic))}${kv('Debt/Equity',nn(c.debtEquity,2))}
-        ${kv('Current Ratio',nn(c.currentRatio,2))}${kv('Quick Ratio',nn(c.quickRatio,2))}
-        ${kv('Beta',nn(c.beta,2))}${kv('Growth Score',c.score+'/100')}
-      </div>
+    <div style="margin-top:8px;padding:12px 14px;background:rgba(245,200,66,.06);border:1px solid rgba(245,200,66,.2);border-radius:8px;font-size:11px;color:var(--yellow);line-height:1.6">
+      ⚠ Piano gratuito FMP: indici di bilancio (P/E, ROE, margini, crescita ricavi) non disponibili per le borse europee. Solo dati di mercato base.
     </div>`;
   document.getElementById('overlay').classList.add('open');
   document.getElementById('drawer').classList.add('open');
