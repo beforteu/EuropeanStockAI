@@ -12,10 +12,10 @@ from datetime import datetime, timezone, timedelta
 
 # ── CONFIG ──────────────────────────────────────────────────────
 API_KEY  = os.environ.get("FMP_API_KEY", "")
-BASE_URL = "https://financialmodelingprep.com/api/v3"
+BASE_URL = "https://financialmodelingprep.com/stable"
 OUT_FILE = "data.json"
-BATCH    = 4          # richieste parallele (rispetta rate limit free tier)
-SLEEP_S  = 0.25       # pausa tra batch (secondi)
+BATCH    = 8          # richieste parallele (rispetta rate limit free tier: 250/giorno)
+SLEEP_S  = 0.3        # pausa tra batch (secondi)
 
 INDICES = [
     {"name": "FTSE MIB",      "id": "ftse_mib", "cls": "exch-ftse" },
@@ -91,59 +91,60 @@ def m_eur(v):
     f = safe_float(v)
     return round(f / 1_000_000) if f is not None else None
 
-def calc_score(rev_growth, roe, net_margin, debt_eq, pe):
+def calc_score(change_pct, beta, dividend, mkt_cap_m):
+    """
+    Score semplificato basato solo sui dati disponibili nel piano gratuito FMP:
+    variazione prezzo recente, volatilità (beta), dividend yield, dimensione azienda.
+    Nota: senza P/E, ROE, margini reali, questo è un indicatore di massima —
+    non un vero growth score fondamentale.
+    """
     s = 50
-    if rev_growth is not None:
-        v = rev_growth
-        s += 15 if v > 20 else 10 if v > 10 else 5 if v > 5 else 2 if v > 0 else -5
-    if roe is not None:
-        v = roe
-        s += 12 if v > 25 else 8 if v > 15 else 4 if v > 8 else -8 if v < 0 else 0
-    if net_margin is not None:
-        v = net_margin
-        s += 10 if v > 20 else 6 if v > 10 else 2 if v > 0 else -6
-    if debt_eq is not None:
-        s += 8 if debt_eq < 0.3 else 4 if debt_eq < 1 else 0 if debt_eq < 2 else -6
-    if pe is not None and pe > 0:
-        s += 5 if pe < 10 else 3 if pe < 20 else 0 if pe < 30 else -3
+    if change_pct is not None:
+        s += 10 if change_pct > 3 else 6 if change_pct > 1 else 2 if change_pct > 0 else -6 if change_pct < -2 else -2
+    if beta is not None:
+        # beta moderato (0.6-1.3) preferito: troppo basso = poco dinamico, troppo alto = rischioso
+        if 0.6 <= beta <= 1.3:
+            s += 8
+        elif beta > 1.8:
+            s -= 6
+    if dividend is not None:
+        s += 8 if dividend > 4 else 5 if dividend > 2 else 2 if dividend > 0 else 0
+    if mkt_cap_m is not None:
+        # mega-cap = più stabilità/liquidità
+        s += 6 if mkt_cap_m > 50000 else 3 if mkt_cap_m > 10000 else 0
     return max(0, min(100, round(s)))
 
 # ── FETCH ONE COMPANY ────────────────────────────────────────────
 def fetch_company(ticker: str, idx: dict) -> dict | None:
     try:
-        profiles = fmp_get(f"/profile/{ticker}")
-        metrics  = fmp_get(f"/key-metrics-ttm/{ticker}")
-        ratios   = fmp_get(f"/ratios-ttm/{ticker}")
+        profiles = fmp_get(f"/profile?symbol={ticker}")
     except Exception as e:
         print(f"  ✗ {ticker}: {e}")
         return None
 
     p = (profiles[0] if isinstance(profiles, list) else profiles) or {}
-    m = (metrics[0]  if isinstance(metrics,  list) else metrics)  or {}
-    r = (ratios[0]   if isinstance(ratios,   list) else ratios)   or {}
 
     if not p.get("companyName"):
         print(f"  ✗ {ticker}: no data")
         return None
 
-    rev_growth  = pct(r.get("revenueGrowthTTM") or m.get("revenueGrowthTTM"))
-    net_margin  = pct(r.get("netProfitMarginTTM"))
-    gross_margin= pct(r.get("grossProfitMarginTTM"))
-    ebitda_margin=pct(r.get("ebitdaMarginTTM"))
-    roe         = pct(r.get("returnOnEquityTTM") or m.get("roeTTM"))
-    roa         = pct(r.get("returnOnAssetsTTM") or m.get("roaTTM"))
-    roic        = pct(m.get("roicTTM"))
-    debt_eq     = safe_float(r.get("debtEquityRatioTTM") or m.get("debtToEquityTTM"))
-    pe          = safe_float(p.get("pe"))
     price       = safe_float(p.get("price"))
-    last_div    = safe_float(p.get("lastDiv"))
+    change_pct  = safe_float(p.get("changePercentage"))
+    beta        = safe_float(p.get("beta"))
+    mkt_cap_m   = m_eur(p.get("marketCap"))
+    last_div    = safe_float(p.get("lastDividend"))
     div_yield   = round(last_div / price * 100, 2) if last_div and price else None
 
-    fcf_ps = safe_float(m.get("freeCashFlowPerShareTTM"))
-    shares = safe_float(p.get("sharesOutstanding"))
-    fcf    = m_eur(fcf_ps * shares) if fcf_ps and shares else None
+    # range comes as "low-high" string, e.g. "13.584-25.015"
+    low52, high52 = None, None
+    range_str = p.get("range") or ""
+    if "-" in range_str:
+        parts = range_str.split("-")
+        if len(parts) == 2:
+            low52  = safe_float(parts[0])
+            high52 = safe_float(parts[1])
 
-    score = calc_score(rev_growth, roe, net_margin, debt_eq, pe)
+    score = calc_score(change_pct, beta, div_yield, mkt_cap_m)
 
     print(f"  ✓ {ticker} ({idx['name']}) — score {score}")
     return {
@@ -157,29 +158,12 @@ def fetch_company(ticker: str, idx: dict) -> dict | None:
         "country":       p.get("country", ""),
         "currency":      p.get("currency", "EUR"),
         "price":         price,
-        "change":        safe_float(p.get("changes")),
-        "marketCap":     m_eur(p.get("mktCap")),
-        "pe":            pe,
-        "pb":            safe_float(m.get("pbRatioTTM")),
-        "ps":            safe_float(r.get("priceToSalesRatioTTM")),
-        "eps":           safe_float(p.get("eps")),
-        "roe":           roe,
-        "roa":           roa,
-        "roic":          roic,
-        "revenue":       m_eur(p.get("revenue")),
-        "revenueGrowth": rev_growth,
-        "netMargin":     net_margin,
-        "grossMargin":   gross_margin,
-        "ebitda":        m_eur(m.get("ebitdaTTM")),
-        "ebitdaMargin":  ebitda_margin,
-        "debtEquity":    debt_eq,
-        "currentRatio":  safe_float(r.get("currentRatioTTM")),
-        "quickRatio":    safe_float(r.get("quickRatioTTM")),
-        "fcf":           fcf,
+        "change":        change_pct,
+        "marketCap":     mkt_cap_m,
         "dividend":      div_yield,
-        "beta":          safe_float(p.get("beta")),
-        "high52":        safe_float(p.get("52WeekHigh")),
-        "low52":         safe_float(p.get("52WeekLow")),
+        "beta":          beta,
+        "high52":        high52,
+        "low52":         low52,
         "score":         score,
     }
 
