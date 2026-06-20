@@ -1,0 +1,72 @@
+name: 📊 Aggiorna Dati Mercato (07:00 CET)
+
+on:
+  # Esegui ogni giorno alle 06:00 UTC = 07:00 CET (08:00 CEST in estate)
+  schedule:
+    - cron: "0 6 * * 1-5"   # solo giorni feriali (lun-ven)
+    - cron: "0 6 * * 6"     # sabato: aggiornamento weekend
+  # Permetti esecuzione manuale dalla tab "Actions" di GitHub
+  workflow_dispatch:
+
+permissions:
+  contents: write   # per committare data.json
+  pages: write      # per pubblicare su GitHub Pages
+  id-token: write
+
+jobs:
+  fetch-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      # 1. Checkout del repository
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      # 2. Setup Python
+      - name: 🐍 Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # 3. Installa dipendenze
+      - name: 📦 Installa dipendenze
+        run: pip install requests
+
+      # 4. Esegui lo script di fetch (usa il secret FMP_API_KEY)
+      - name: 🔄 Scarica dati da Financial Modeling Prep
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: python fetch_data.py
+
+      # 5. Mostra statistiche del file generato
+      - name: 📋 Statistiche data.json
+        run: |
+          echo "Dimensione file: $(du -sh data.json | cut -f1)"
+          echo "Aziende caricate: $(python -c "import json; d=json.load(open('data.json')); print(d['count'])")"
+          echo "Aggiornato: $(python -c "import json; d=json.load(open('data.json')); print(d['updated_at'])")"
+
+      # 6. Commit di data.json nel repository
+      - name: 💾 Commit data.json
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data.json
+          git diff --staged --quiet || git commit -m "📊 Auto-update dati mercato — $(date +'%d/%m/%Y %H:%M') CET"
+          git push
+
+      # 7. Pubblica su GitHub Pages
+      - name: 🚀 Setup GitHub Pages
+        uses: actions/configure-pages@v4
+
+      - name: 📁 Upload artifact per Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "."   # pubblica tutta la cartella (index.html + data.json)
+
+      - name: 🌐 Deploy su GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
