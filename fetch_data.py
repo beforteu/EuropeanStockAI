@@ -122,7 +122,9 @@ def fetch_company(ticker: str, idx: dict) -> dict | None:
         print(f"  ✗ {ticker}: {e}")
         return None
 
-    p = (profiles[0] if isinstance(profiles, list) else profiles) or {}
+    p = (profiles[0] if isinstance(profiles, list) and len(profiles) > 0
+         else profiles if isinstance(profiles, dict)
+         else {}) or {}
 
     if not p.get("companyName"):
         print(f"  ✗ {ticker}: no data")
@@ -187,9 +189,12 @@ def main():
     for i in range(0, len(queue), BATCH):
         batch = queue[i : i + BATCH]
         for ticker, idx in batch:
-            company = fetch_company(ticker, idx)
-            if company:
-                results.append(company)
+            try:
+                company = fetch_company(ticker, idx)
+                if company:
+                    results.append(company)
+            except Exception as e:
+                print(f"  ✗ {ticker}: errore imprevisto — {e}")
         if i + BATCH < len(queue):
             time.sleep(SLEEP_S)
 
